@@ -1,55 +1,55 @@
 'use strict'
 
-var $ = require('jquery')
-var csjs = require('csjs-inject')
-var yo = require('yo-yo')
-var async = require('async')
-var request = require('request')
-var remixLib = require('remix-lib')
-var EventManager = remixLib.EventManager
+const $ = require('jquery')
+const csjs = require('csjs-inject')
+const yo = require('yo-yo')
+const async = require('async')
+const request = require('request')
+const remixLib = require('remix-lib')
+const EventManager = remixLib.EventManager
 
-var UniversalDApp = require('./universal-dapp.js')
-var UniversalDAppUI = require('./universal-dapp-ui.js')
-var Remixd = require('./lib/remixd')
-var OffsetToLineColumnConverter = require('./lib/offsetToLineColumnConverter')
+const UniversalDApp = require('./universal-dapp.js')
+const UniversalDAppUI = require('./universal-dapp-ui.js')
+const Remixd = require('./lib/remixd')
+const OffsetToLineColumnConverter = require('./lib/offsetToLineColumnConverter')
 
-var QueryParams = require('./lib/query-params')
-var GistHandler = require('./lib/gist-handler')
-var helper = require('./lib/helper')
-var Storage = remixLib.Storage
-var Browserfiles = require('./app/files/browser-files')
-var BrowserfilesTree = require('./app/files/browser-files-tree')
-var chromeCloudStorageSync = require('./app/files/chromeCloudStorageSync')
-var SharedFolder = require('./app/files/shared-folder')
-var Config = require('./config')
-var Editor = require('./app/editor/editor')
-var Renderer = require('./app/ui/renderer')
-var Compiler = require('remix-solidity').Compiler
-var executionContext = require('./execution-context')
-var Debugger = require('./app/debugger/debugger')
-var StaticAnalysis = require('./app/staticanalysis/staticAnalysisView')
-var FilePanel = require('./app/panels/file-panel')
-var EditorPanel = require('./app/panels/editor-panel')
-var RighthandPanel = require('./app/panels/righthand-panel')
-var examples = require('./app/editor/example-contracts')
-var modalDialogCustom = require('./app/ui/modal-dialog-custom')
-var TxLogger = require('./app/execution/txLogger')
-var Txlistener = remixLib.execution.txListener
-var EventsDecoder = remixLib.execution.EventsDecoder
-var CompilerImport = require('./app/compiler/compiler-imports')
-var FileManager = require('./app/files/fileManager')
-var ContextualListener = require('./app/editor/contextualListener')
-var ContextView = require('./app/editor/contextView')
-var BasicReadOnlyExplorer = require('./app/files/basicReadOnlyExplorer')
-var NotPersistedExplorer = require('./app/files/NotPersistedExplorer')
-var toolTip = require('./app/ui/tooltip')
-var CommandInterpreter = require('./lib/cmdInterpreter')
-var PluginAPI = require('./app/plugin/pluginAPI')
+const QueryParams = require('./lib/query-params')
+const GistHandler = require('./lib/gist-handler')
+const helper = require('./lib/helper')
+const Storage = remixLib.Storage
+const Browserfiles = require('./app/files/browser-files')
+const BrowserfilesTree = require('./app/files/browser-files-tree')
+const chromeCloudStorageSync = require('./app/files/chromeCloudStorageSync')
+const SharedFolder = require('./app/files/shared-folder')
+const Config = require('./config')
+const Editor = require('./app/editor/editor')
+const Renderer = require('./app/ui/renderer')
+const Compiler = require('remix-solidity').Compiler
+const executionContext = require('./execution-context')
+const Debugger = require('./app/debugger/debugger')
+const StaticAnalysis = require('./app/staticanalysis/staticAnalysisView')
+const FilePanel = require('./app/panels/file-panel')
+const EditorPanel = require('./app/panels/editor-panel')
+const RighthandPanel = require('./app/panels/righthand-panel')
+const examples = require('./app/editor/example-contracts')
+const modalDialogCustom = require('./app/ui/modal-dialog-custom')
+const TxLogger = require('./app/execution/txLogger')
+const Txlistener = remixLib.execution.txListener
+const EventsDecoder = remixLib.execution.EventsDecoder
+const CompilerImport = require('./app/compiler/compiler-imports')
+const FileManager = require('./app/files/fileManager')
+const ContextualListener = require('./app/editor/contextualListener')
+const ContextView = require('./app/editor/contextView')
+const BasicReadOnlyExplorer = require('./app/files/basicReadOnlyExplorer')
+const NotPersistedExplorer = require('./app/files/NotPersistedExplorer')
+const toolTip = require('./app/ui/tooltip')
+const CommandInterpreter = require('./lib/cmdInterpreter')
+const PluginAPI = require('./app/plugin/pluginAPI')
 
-var styleGuide = require('./app/ui/styles-guide/theme-chooser')
-var styles = styleGuide.chooser()
+const styleGuide = require('./app/ui/styles-guide/theme-chooser')
+const styles = styleGuide.chooser()
 
-var css = csjs`
+const css = csjs`
   html { box-sizing: border-box; }
   *, *:before, *:after { box-sizing: inherit; }
   body                 {
@@ -113,37 +113,37 @@ var css = csjs`
 
 class App {
   constructor (api = {}, events = {}, opts = {}) {
-    var self = this
-    self._api = {}
-    var fileStorage = new Storage('sol:')
-    var configStorage = new Storage('config:')
-    self._api.config = new Config(fileStorage)
-    executionContext.init(self._api.config)
+    this._api = {}
+    // Storage: remix/remix-core/src/storage.js : the simple wrapper for localStorage
+    const fileStorage = new Storage('sol:')
+    const configStorage = new Storage('config:')
+    this._api.config = new Config(fileStorage)
+    executionContext.init(this._api.config)
     executionContext.listenOnLastBlock()
-    self._api.filesProviders = {}
-    self._api.filesProviders['browser'] = new Browserfiles(fileStorage)
-    self._api.filesProviders['config'] = new BrowserfilesTree('config', configStorage)
-    self._api.filesProviders['config'].init()
+    this._api.filesProviders = {}
+    this._api.filesProviders['browser'] = new Browserfiles(fileStorage)
+    this._api.filesProviders['config'] = new BrowserfilesTree('config', configStorage)
+    this._api.filesProviders['config'].init()
     var remixd = new Remixd()
     remixd.event.register('system', (message) => {
       if (message.error) toolTip(message.error)
     })
-    self._api.filesProviders['localhost'] = new SharedFolder(remixd)
-    self._api.filesProviders['swarm'] = new BasicReadOnlyExplorer('swarm')
-    self._api.filesProviders['github'] = new BasicReadOnlyExplorer('github')
-    self._api.filesProviders['gist'] = new NotPersistedExplorer('gist')
-    self._api.filesProviders['ipfs'] = new BasicReadOnlyExplorer('ipfs')
-    self._view = {}
-    self._components = {}
-    self._components.compilerImport = new CompilerImport()
-    self.data = {
+    this._api.filesProviders['localhost'] = new SharedFolder(remixd)
+    this._api.filesProviders['swarm'] = new BasicReadOnlyExplorer('swarm')
+    this._api.filesProviders['github'] = new BasicReadOnlyExplorer('github')
+    this._api.filesProviders['gist'] = new NotPersistedExplorer('gist')
+    this._api.filesProviders['ipfs'] = new BasicReadOnlyExplorer('ipfs')
+    this._view = {}
+    this._components = {}
+    this._components.compilerImport = new CompilerImport()
+    this.data = {
       _layout: {
         right: {
-          offset: self._api.config.get('right-offset') || 400,
+          offset: this._api.config.get('right-offset') || 400,
           show: true
         }, // @TODO: adapt sizes proportionally to browser window size
         left: {
-          offset: self._api.config.get('left-offset') || 200,
+          offset: this._api.config.get('left-offset') || 200,
           show: true
         }
       }
@@ -172,11 +172,11 @@ class App {
     }
   }
   init () {
-    var self = this
+    const self = this
     run.apply(self)
   }
   render () {
-    var self = this
+    const self = this
     if (self._view.el) return self._view.el
     self._view.leftpanel = yo`
       <div id="filepanel" class=${css.leftpanel}>
@@ -209,8 +209,8 @@ class App {
 
 module.exports = App
 
-function run () {
-  var self = this
+const run = () => {
+  const self = this
 
   if (window.location.hostname === 'yann300.github.io') {
     modalDialogCustom.alert('This UNSTABLE ALPHA branch of Remix has been moved to http://ethereum.github.io/remix-live-alpha.')
@@ -263,7 +263,7 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       })
     } else if (self._components.compilerImport.isRelativeImport(url)) {
       // try to resolve localhost modules (aka truffle imports)
-      var splitted = /([^/]+)\/(.*)$/g.exec(url)
+      const splitted = /([^/]+)\/(.*)$/g.exec(url)
       async.tryEach([
         (cb) => { importFileCb('localhost/installed_contracts/' + url, cb) },
         (cb) => { if (!splitted) { cb('url not parseable' + url) } else { importFileCb('localhost/installed_contracts/' + splitted[1] + '/contracts/' + splitted[2], cb) } },
@@ -277,8 +277,8 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
   }
 
   // ----------------- Compiler -----------------
-  var compiler = new Compiler(importFileCb)
-  var offsetToLineColumnConverter = new OffsetToLineColumnConverter(compiler.event)
+  const compiler = new Compiler(importFileCb)
+  const offsetToLineColumnConverter = new OffsetToLineColumnConverter(compiler.event)
 
   // ----------------- UniversalDApp -----------------
   var transactionContextAPI = {
