@@ -5,6 +5,7 @@
   "devDependencies": {
     "async": "^2.1.2",
     "babel-eslint": "^7.1.1",
+    "babel-plugin-transform-es2015-arrow-functions": "^6.22.0",
     "babel-plugin-transform-object-assign": "^6.22.0",
     "babel-plugin-yo-yoify": "^0.3.3",
     "babel-polyfill": "^6.22.0",
@@ -152,7 +153,6 @@
     "csslint": "csslint --ignore=order-alphabetical --errors='errors,duplicate-properties,empty-rules' --exclude-list='assets/css/font-awesome.min.css' assets/css/",
     "downloadsolc": "rimraf soljson.js && cd node_modules/solc && wget --no-check-certificate https://solc-bin.ethereum.org/soljson.js && cd ../../",
     "downloadsolc_root": "wget --no-check-certificate https://solc-bin.ethereum.org/soljson.js",
-    "lint": "standard | notify-error",
     "make-mock-compiler": "node ci/makeMockCompiler.js",
     "minify": "uglifyjs --in-source-map inline --source-map-inline -c warnings=false",
     "nightwatch_local": "nightwatch --config nightwatch.js --env local",
@@ -163,6 +163,7 @@
     "nightwatch_remote_safari": "nightwatch --config nightwatch.js --env safari",
     "nightwatch_remote_debugger_parallel": "nightwatch --config nightwatch_debugger.js --env safari,chrome,default",
     "onchange": "onchange build/app.js -- npm-run-all lint",
+    "lint": "echo hoge",
     "prepublish": "mkdirp build; npm-run-all -ls downloadsolc_root build",
     "remixd": "./node_modules/remixd/bin/remixd -s ./contracts",
     "selenium": "execr --silent selenium-standalone start",

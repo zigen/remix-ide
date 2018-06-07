@@ -8,10 +8,7 @@ const request = require('request')
 const remixLib = require('remix-lib')
 const EventManager = remixLib.EventManager
 
-const UniversalDApp = require('./universal-dapp.js')
-const UniversalDAppUI = require('./universal-dapp-ui.js')
 const Remixd = require('./lib/remixd')
-const OffsetToLineColumnConverter = require('./lib/offsetToLineColumnConverter')
 
 const QueryParams = require('./lib/query-params')
 const GistHandler = require('./lib/gist-handler')
@@ -24,7 +21,6 @@ const SharedFolder = require('./app/files/shared-folder')
 const Config = require('./config')
 const Editor = require('./app/editor/editor')
 const Renderer = require('./app/ui/renderer')
-const Compiler = require('remix-solidity').Compiler
 const executionContext = require('./execution-context')
 const Debugger = require('./app/debugger/debugger')
 const StaticAnalysis = require('./app/staticanalysis/staticAnalysisView')
@@ -34,8 +30,7 @@ const RighthandPanel = require('./app/panels/righthand-panel')
 const examples = require('./app/editor/example-contracts')
 const modalDialogCustom = require('./app/ui/modal-dialog-custom')
 const TxLogger = require('./app/execution/txLogger')
-const Txlistener = remixLib.execution.txListener
-const EventsDecoder = remixLib.execution.EventsDecoder
+
 const CompilerImport = require('./app/compiler/compiler-imports')
 const FileManager = require('./app/files/fileManager')
 const ContextualListener = require('./app/editor/contextualListener')
@@ -49,6 +44,12 @@ const PluginAPI = require('./app/plugin/pluginAPI')
 const styleGuide = require('./app/ui/styles-guide/theme-chooser')
 const styles = styleGuide.chooser()
 
+import {
+  locationChecker,
+  initSolidityCompiler,
+  initUniversalDApp,
+  initTxListener
+} from './initializers';
 const css = csjs`
   html { box-sizing: border-box; }
   *, *:before, *:after { box-sizing: inherit; }
@@ -124,7 +125,7 @@ class App {
     this._api.filesProviders['browser'] = new Browserfiles(fileStorage)
     this._api.filesProviders['config'] = new BrowserfilesTree('config', configStorage)
     this._api.filesProviders['config'].init()
-    var remixd = new Remixd()
+    const remixd = new Remixd()
     remixd.event.register('system', (message) => {
       if (message.error) toolTip(message.error)
     })
@@ -150,25 +151,25 @@ class App {
     }
   }
   _adjustLayout (direction, delta) {
-    var self = this
-    var layout = self.data._layout[direction]
+
+    const layout = this.data._layout[direction]
     if (layout) {
       if (delta === undefined) {
         layout.show = !layout.show
         if (layout.show) delta = layout.offset
         else delta = 0
       } else {
-        self._api.config.set(`${direction}-offset`, delta)
+        this._api.config.set(`${direction}-offset`, delta)
         layout.offset = delta
       }
     }
     if (direction === 'left') {
-      self._view.leftpanel.style.width = delta + 'px'
-      self._view.centerpanel.style.left = delta + 'px'
+      this._view.leftpanel.style.width = delta + 'px'
+      this._view.centerpanel.style.left = delta + 'px'
     }
     if (direction === 'right') {
-      self._view.rightpanel.style.width = delta + 'px'
-      self._view.centerpanel.style.right = delta + 'px'
+      this._view.rightpanel.style.width = delta + 'px'
+      this._view.centerpanel.style.right = delta + 'px'
     }
   }
   init () {
@@ -209,179 +210,27 @@ class App {
 
 module.exports = App
 
-const run = () => {
+const run = function () {
   const self = this
+  locationChecker()
 
-  if (window.location.hostname === 'yann300.github.io') {
-    modalDialogCustom.alert('This UNSTABLE ALPHA branch of Remix has been moved to http://ethereum.github.io/remix-live-alpha.')
-  } else if (window.location.hostname === 'remix-alpha.ethereum.org' ||
-  (window.location.hostname === 'ethereum.github.io' && window.location.pathname.indexOf('/remix-live-alpha') === 0)) {
-    modalDialogCustom.alert(`This instance of the Remix IDE is an UNSTABLE ALPHA branch.\n
-Please only use it if you know what you are doing, otherwise visit the stable version at http://remix.ethereum.org.`)
-  } else if (window.location.protocol.indexOf('http') === 0 &&
-  window.location.hostname !== 'remix.ethereum.org' &&
-  window.location.hostname !== 'localhost' &&
-  window.location.hostname !== '127.0.0.1') {
-    modalDialogCustom.alert(`The Remix IDE has moved to http://remix.ethereum.org.\n
-This instance of Remix you are visiting WILL NOT BE UPDATED.\n
-Please make a backup of your contracts and start using http://remix.ethereum.org`)
-  }
+  var config = self._api.config
+  var filesProviders = self._api.filesProviders
+  // ----------------- editor ----------------------------
+  this._components.editor = new Editor({}) // @TODO: put into editorpanel
+  var editor = self._components.editor // shortcut for the editor
 
-  if (window.location.protocol.indexOf('https') === 0) {
-    toolTip('You are using an `https` connection. Please switch to `http` if you are using Remix against an `http Web3 provider` or allow Mixed Content in your browser.')
-  }
-  // Oops! Accidentally trigger refresh or bookmark.
-  window.onbeforeunload = function () {
-    return 'Are you sure you want to leave?'
-  }
-
-  function importExternal (url, cb) {
-    self._components.compilerImport.import(url,
-      (loadingMsg) => {
-        toolTip(loadingMsg)
-      },
-      (error, content, cleanUrl, type, url) => {
-        if (!error) {
-          filesProviders[type].addReadOnly(cleanUrl, content, url)
-          cb(null, content)
-        } else {
-          cb(error)
-        }
-      })
-  }
-
-  function importFileCb (url, filecb) {
-    var provider = fileManager.fileProviderOf(url)
-    if (provider) {
-      provider.exists(url, (error, exist) => {
-        if (error) return filecb(error)
-        if (exist) {
-          return provider.get(url, filecb)
-        } else {
-          importExternal(url, filecb)
-        }
-      })
-    } else if (self._components.compilerImport.isRelativeImport(url)) {
-      // try to resolve localhost modules (aka truffle imports)
-      const splitted = /([^/]+)\/(.*)$/g.exec(url)
-      async.tryEach([
-        (cb) => { importFileCb('localhost/installed_contracts/' + url, cb) },
-        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { importFileCb('localhost/installed_contracts/' + splitted[1] + '/contracts/' + splitted[2], cb) } },
-        (cb) => { importFileCb('localhost/node_modules/' + url, cb) },
-        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { importFileCb('localhost/node_modules/' + splitted[1] + '/contracts/' + splitted[2], cb) } }],
-        (error, result) => { filecb(error, result) }
-      )
-    } else {
-      importExternal(url, filecb)
-    }
-  }
-
-  // ----------------- Compiler -----------------
-  const compiler = new Compiler(importFileCb)
-  const offsetToLineColumnConverter = new OffsetToLineColumnConverter(compiler.event)
-
-  // ----------------- UniversalDApp -----------------
-  var transactionContextAPI = {
-    getAddress: (cb) => {
-      cb(null, $('#txorigin').val())
-    },
-    getValue: (cb) => {
-      try {
-        var number = document.querySelector('#value').value
-        var select = document.getElementById('unit')
-        var index = select.selectedIndex
-        var selectedUnit = select.querySelectorAll('option')[index].dataset.unit
-        var unit = 'ether' // default
-        if (selectedUnit === 'ether') {
-          unit = 'ether'
-        } else if (selectedUnit === 'finney') {
-          unit = 'finney'
-        } else if (selectedUnit === 'gwei') {
-          unit = 'gwei'
-        } else if (selectedUnit === 'wei') {
-          unit = 'wei'
-        }
-        cb(null, executionContext.web3().toWei(number, unit))
-      } catch (e) {
-        cb(e)
-      }
-    },
-    getGasLimit: (cb) => {
-      cb(null, $('#gasLimit').val())
-    }
-  }
-
-  var udapp = new UniversalDApp({
-    api: {
-      logMessage: (msg) => {
-        self._components.editorpanel.log({ type: 'log', value: msg })
-      },
-      logHtmlMessage: (msg) => {
-        self._components.editorpanel.log({ type: 'html', value: msg })
-      },
-      config: self._api.config,
-      detectNetwork: (cb) => {
-        executionContext.detectNetwork(cb)
-      },
-      personalMode: () => {
-        return self._api.config.get('settings/personal-mode')
-      }
-    },
-    opt: { removable: false, removable_instances: true }
+  var fileManager = new FileManager({
+    config: config,
+    editor: editor,
+    filesProviders: filesProviders,
+    compilerImport: self._components.compilerImport
   })
 
-  var udappUI = new UniversalDAppUI(udapp)
-
-  udapp.reset({}, transactionContextAPI)
-  udappUI.reset()
-  udapp.event.register('debugRequested', this, function (txResult) {
-    startdebugging(txResult.transactionHash)
-  })
-
-  // ----------------- Tx listener -----------------
-  var transactionReceiptResolver = {
-    _transactionReceipts: {},
-    resolve: function (tx, cb) {
-      if (this._transactionReceipts[tx.hash]) {
-        return cb(null, this._transactionReceipts[tx.hash])
-      }
-      executionContext.web3().eth.getTransactionReceipt(tx.hash, (error, receipt) => {
-        if (!error) {
-          this._transactionReceipts[tx.hash] = receipt
-          cb(null, receipt)
-        } else {
-          cb(error)
-        }
-      })
-    }
-  }
-
-  var compiledContracts = function () {
-    if (compiler.lastCompilationResult && compiler.lastCompilationResult.data) {
-      return compiler.lastCompilationResult.data.contracts
-    }
-    return null
-  }
-  var txlistener = new Txlistener({
-    api: {
-      contracts: compiledContracts,
-      resolveReceipt: function (tx, cb) {
-        transactionReceiptResolver.resolve(tx, cb)
-      }
-    },
-    event: {
-      udapp: udapp.event
-    }})
-
-  var eventsDecoder = new EventsDecoder({
-    api: {
-      resolveReceipt: function (tx, cb) {
-        transactionReceiptResolver.resolve(tx, cb)
-      }
-    }
-  })
-
-  txlistener.startListening()
+  const { compiler, offsetToLineColumnConverter} = initSolidityCompiler(self, fileManager, filesProviders);
+  const { udapp, udappUI, transactionContextAPI } = initUniversalDApp(self, executionContext);
+  
+  const txlistener = initTxListener(self, executionContext, compiler, udapp);
 
   // ----------------- Command Interpreter -----------------
   /*
@@ -447,9 +296,6 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
     })
   })
 
-  // ----------------- editor ----------------------------
-  this._components.editor = new Editor({}) // @TODO: put into editorpanel
-  var editor = self._components.editor // shortcut for the editor
 
   // ---------------- ContextualListener -----------------------
   this._components.contextualListener = new ContextualListener({
@@ -560,16 +406,7 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
 
   this.event = new EventManager()
 
-  var config = self._api.config
-  var filesProviders = self._api.filesProviders
-
-  var fileManager = new FileManager({
-    config: config,
-    editor: editor,
-    filesProviders: filesProviders,
-    compilerImport: self._components.compilerImport
-  })
-
+ 
   // Add files received from remote instance (i.e. another remix-ide)
   function loadFiles (filesSet, fileProvider, callback) {
     if (!fileProvider) fileProvider = 'browser'
